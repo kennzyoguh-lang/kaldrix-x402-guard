@@ -45,6 +45,26 @@ const res = await pay("https://api.supplier.com/data");
 
 `mySigner(requirement, required)` is yours: it builds and signs the payment payload with your wallet. It is only called for a payment the guard has allowed.
 
+## AP2 mandates (Google's Agent Payments Protocol, version 0.2)
+
+AP2 describes a person's permission as a chain of signed tokens: an **open** payment mandate (the limits) and a **closed** one (one actual payment). Checking the signatures and the chain is a separate job, done by a library that implements the Delegate SD-JWT draft (Google's own Python SDK does it). **This library does not check signatures.** It does the step after that, the one the specification calls for: does the closed payment satisfy the constraints in the open mandate?
+
+```ts
+import { checkAp2PaymentConstraints, ap2ToPolicy, createGuard } from "./src/index";
+
+// 1. After your SD-JWT library has verified the chain, you hold the decoded open and closed mandate content.
+const problems = checkAp2PaymentConstraints(openMandate, closedMandate, { totalAmountMinor: spentSoFar, totalUses: uses, nowSeconds });
+if (problems.length) refuse(problems);
+
+// 2. Or turn the open mandate's limits into a policy for the x402 guard above.
+const { policy, notEnforced } = ap2ToPolicy(openMandate, { allowedAssets, walletsByPayeeId });
+const guard = createGuard(policy);
+```
+
+Covered, following the specification and the evaluation rules of the reference SDK: `payment.amount_range`, `payment.allowed_payees`, `payment.allowed_payment_instruments`, `payment.allowed_pisps`, `payment.budget`, `payment.agent_recurrence` (including the rule that it needs an amount range and a budget), `payment.reference`, `payment.execution_date`, and the claims fixed in an open mandate. **An unknown constraint fails**, as the specification requires. `ap2ToPolicy` never loosens a limit: anything it cannot turn into a limit is listed in `notEnforced`, and a mandate that sets no amount limit or names no payee with a known wallet is refused instead of being given an unlimited policy.
+
+Limits of this part: it was written from the published documents and the reference SDK's source and checked by tests that follow them. It was **not** run against the reference SDK's own test suite, and it is not endorsed by Google, the FIDO Alliance or anyone else. AP2 version 0.2 is described as pre-release and may change.
+
 ## Run the tests
 
 ```
@@ -52,7 +72,7 @@ npm install
 npm test
 ```
 
-34 tests cover reading both versions, every refusal, the money arithmetic, totals and rollbacks, a signer that tries to change the amount, a server that lies about the website, and an agent that loops.
+51 tests cover reading both versions, every refusal, the money arithmetic, totals and rollbacks, a signer that tries to change the amount, a server that lies about the website, and an agent that loops, and every AP2 constraint.
 
 ## What it does not do. Please read this.
 
