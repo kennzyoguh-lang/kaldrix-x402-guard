@@ -17,3 +17,20 @@ export {
   type Ap2ToPolicyOptions,
   type Ap2ToPolicyResult,
 } from "./ap2";
+export {
+  KaldrixAuthority,
+  choosePermission,
+  leafBlockId,
+  paymentNumber,
+  privateKeyFromSeed,
+  proofMessage,
+  publicHex,
+  signProof,
+  type Authority,
+  type AuthorityResult,
+  type KaldrixAuthorityOptions,
+  type KaldrixScope,
+  type KaldrixToken,
+  type Proof,
+} from "./kaldrix";
+export type { ApprovalInfo, AuthorizedInfo } from "./fetch";

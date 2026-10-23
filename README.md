@@ -45,6 +45,32 @@ const res = await pay("https://api.supplier.com/data");
 
 `mySigner(requirement, required)` is yours: it builds and signs the payment payload with your wallet. It is only called for a payment the guard has allowed.
 
+## With Kaldrix in front: a signed permission decides, the guard obeys
+
+The local policy above is a plain settings object. The stronger setup lets **Kaldrix** decide. Before the agent signs, the guard asks the Kaldrix service whether a **signed permission a person gave this agent** allows this exact payment. Kaldrix checks the amount, supplier and purpose against the permission, counts the spend against the total cap, asks a person to approve a large payment, writes it to an audit log, and returns a **signed proof** of what was authorised. If Kaldrix says no, or cannot be reached, nothing is signed.
+
+```ts
+import { createGuard, guardedFetch, KaldrixAuthority } from "./src/index";
+
+const authority = new KaldrixAuthority({
+  baseUrl: "https://kaldrix-sandbox.onrender.com",
+  agentKey: process.env.KALDRIX_AGENT_KEY!,   // limited key: pays inside a permission, reads payments, nothing else
+  agentSeedHex: mySeed,                        // the agent's own key, never leaves this process
+  permissions: [permissionAPersonGaveMe],
+  recipientByWallet: { "0xSupplierWallet": "acme" },  // which Kaldrix supplier each wallet belongs to
+});
+
+const pay = guardedFetch(fetch, createGuard(localPolicy), mySigner, {
+  authority,
+  approve: askAPerson,                          // called when Kaldrix says a person must approve
+  onAuthorized: ({ envelope }) => keepWithMyRecords(envelope),
+});
+```
+
+The order for every `402`: read the request, check the local policy, **ask Kaldrix**, only then sign, check what was signed against what was approved, send. The proof format is checked against bytes produced by the reference implementation. `examples/live-check.ts` asks the live test service about a payment without making any x402 payment.
+
+**Be clear about what this is.** In the Kaldrix test service the authorised payment goes to a **pretend bank**. For x402 it stands in for the real on-chain payment that follows: Kaldrix decides, counts and records, and this library then lets the agent sign. Kaldrix does **not** watch the blockchain settle, and a recorded spend cannot be undone if the x402 payment later fails (so a failed payment still counts against the cap, the safe direction). A wallet that is not matched to a Kaldrix supplier is never paid.
+
 ## AP2 mandates (Google's Agent Payments Protocol, version 0.2)
 
 AP2 describes a person's permission as a chain of signed tokens: an **open** payment mandate (the limits) and a **closed** one (one actual payment). Checking the signatures and the chain is a separate job, done by a library that implements the Delegate SD-JWT draft (Google's own Python SDK does it). **This library does not check signatures.** It does the step after that, the one the specification calls for: does the closed payment satisfy the constraints in the open mandate?
@@ -72,7 +98,7 @@ npm install
 npm test
 ```
 
-51 tests cover reading both versions, every refusal, the money arithmetic, totals and rollbacks, a signer that tries to change the amount, a server that lies about the website, and an agent that loops, and every AP2 constraint.
+72 tests cover reading both versions, every refusal, the money arithmetic, totals and rollbacks, a signer that tries to change the amount, a server that lies about the website, and an agent that loops, every AP2 constraint, and the Kaldrix client (checked against bytes from the reference implementation).
 
 ## What it does not do. Please read this.
 
