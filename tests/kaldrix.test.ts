@@ -98,6 +98,15 @@ describe("the Kaldrix authority", () => {
     expect(pay.body.intent.idempotency_key).toMatch(/^inv-[0-9a-f]{24}$/);
   });
 
+  it("sends a reference the service accepts: short, plain characters only, whatever the web address looks like", async () => {
+    const { f, calls } = recorder([paid()]);
+    await make(f).authorize({ requirement: requirement(), usdMicro: 10000n, resourceUrl: "https://api.example.com/a b/c?token=1&x=é#frag", attemptId: "attempt-é" });
+    const intent = calls.find((c) => c.body?.intent)!.body.intent;
+    expect(intent.client_reference).toMatch(/^[A-Za-z0-9._:-]{1,64}$/);
+    expect(intent.idempotency_key).toMatch(/^[A-Za-z0-9._:-]{8,64}$/);
+    expect(intent.recipient).toMatch(/^[A-Za-z0-9._:-]{1,64}$/);
+  });
+
   it("converts to cents rounding UP, so a payment is never under-counted", async () => {
     const { f, calls } = recorder([paid()]);
     await ask(make(f), requirement(), 10001n); // 1.0001 cents

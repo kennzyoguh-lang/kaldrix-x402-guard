@@ -173,12 +173,13 @@ export class KaldrixAuthority implements Authority {
     if (!token) return no("no_matching_permission", why.length ? why.join("; ") : "This agent holds no permission yet.");
 
     const grant = token.blocks[token.blocks.length - 1]!.grant;
-    const reference = `x402:${info.resourceUrl}:${info.attemptId}`;
+    // The service accepts only short plain references (letters, digits, - _ . :), so the web address is hashed, never included.
+    const reference = "x402-" + createHash("sha256").update(`${info.resourceUrl}|${info.attemptId}`).digest("hex").slice(0, 32);
     const body = {
       token,
       presenter: grant.subject,
       proof: signProof(this.key, token, recipient, purpose, cents, "USD", now),
-      intent: { amount_minor: cents, currency: "USD", recipient, purpose, client_reference: reference.slice(0, 120), idempotency_key: paymentNumber(recipient, cents, purpose, reference) },
+      intent: { amount_minor: cents, currency: "USD", recipient, purpose, client_reference: reference, idempotency_key: paymentNumber(recipient, cents, purpose, reference) },
     };
 
     let res: Response;
