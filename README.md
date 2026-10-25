@@ -89,7 +89,19 @@ const guard = createGuard(policy);
 
 Covered, following the specification and the evaluation rules of the reference SDK: `payment.amount_range`, `payment.allowed_payees`, `payment.allowed_payment_instruments`, `payment.allowed_pisps`, `payment.budget`, `payment.agent_recurrence` (including the rule that it needs an amount range and a budget), `payment.reference`, `payment.execution_date`, and the claims fixed in an open mandate. **An unknown constraint fails**, as the specification requires. `ap2ToPolicy` never loosens a limit: anything it cannot turn into a limit is listed in `notEnforced`, and a mandate that sets no amount limit or names no payee with a known wallet is refused instead of being given an unlimited policy.
 
-Limits of this part: it was written from the published documents and the reference SDK's source and checked by tests that follow them. It was **not** run against the reference SDK's own test suite, and it is not endorsed by Google, the FIDO Alliance or anyone else. AP2 version 0.2 is described as pre-release and may change.
+### Checked against Google's own reference SDK
+
+`tests/vectors/google-ap2-0.2.0.json` holds 327 cases. Each was run through `check_payment_constraints` in Google's Python SDK (google-agentic-commerce/AP2, commit `e1ea56d`, 29 April 2026) and the SDK's answer was recorded, so no expectation is hand-written. `tests/ap2-conformance.test.ts` requires this library to give the same verdict (allowed or refused) on every case, except where the reference departs from its own specification. The generator is `tests/vectors/make_vectors.py`; rerun it against a newer checkout to refresh the file.
+
+Result: about 310 cases agree. The comparison found one place where **this library** was laxer (a pre-set payment instrument was compared by `id` alone; the reference compares the whole instrument), which is fixed. It found three places where the **reference** departs from the specification, which this library deliberately does not copy:
+
+1. **Budget arithmetic.** The reference computes the limit as `int(max * 100)`. For a budget of 0.29 that is 28, and for 1.15 it is 114, so a payment equal to the budget is refused although the specification says the total MUST be less than or equal to `max`.
+2. **Execution-date window.** The reference compares the dates as text. A time past `not_after` can pass, and a time inside the window can be refused, whenever the offsets or separators differ. The specification speaks of dates being "later than or equal to" and "earlier than or equal to", which is about times.
+3. **Negative amounts.** A negative payment amount passes an amount range with no minimum.
+
+`tests/vectors/repro_reference_findings.py` reproduces all three against a checkout of the reference. One more point is a question, not a defect: the reference never evaluates `payment.agent_recurrence.frequency`, only `max_occurrences` (its `calculate_period_start` is not called anywhere), while the specification says the constraint holds only if the payment is "sufficiently separated in time from the previous presentation to meet the `frequency` definition". This library behaves like the reference there and says so rather than guessing.
+
+It is still not endorsed by Google, the FIDO Alliance or anyone else. 327 cases chosen to hit each constraint's boundaries do not show that every input agrees, and signature and SD-JWT chain checking is not part of this library. AP2 version 0.2 is described as pre-release and may change.
 
 ## Run the tests
 
@@ -98,7 +110,7 @@ npm install
 npm test
 ```
 
-72 tests cover reading both versions, every refusal, the money arithmetic, totals and rollbacks, a signer that tries to change the amount, a server that lies about the website, and an agent that loops, every AP2 constraint, and the Kaldrix client (checked against bytes from the reference implementation).
+75 tests cover reading both versions, every refusal, the money arithmetic, totals and rollbacks, a signer that tries to change the amount, a server that lies about the website, and an agent that loops, every AP2 constraint (including a comparison with Google's reference SDK), and the Kaldrix client (checked against bytes from the reference implementation).
 
 ## What it does not do. Please read this.
 

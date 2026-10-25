@@ -84,11 +84,25 @@ export function merchantMatches(candidate: Ap2Merchant, target: Ap2Merchant): bo
 const isWholeNumber = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n);
 const dateMs = (s: string | undefined): number => (s === undefined ? NaN : Date.parse(s));
 
+/**
+ * A budget is written in whole currency units and amounts in minor units. A plain `Math.trunc(max * 100)` gives 28 for 0.29 and 114
+ * for 1.15 (the product is 28.999999999999996 and 114.99999999999999), which would refuse a payment equal to the budget. The small
+ * error of the floating-point product is allowed for before any fraction of a minor unit is dropped.
+ */
+export function budgetLimitMinor(max: number): number {
+  return Math.floor(max * 100 * (1 + 1e-12));
+}
+
 function checkPresetClaims(open: Ap2OpenPaymentMandate, closed: Ap2ClosedPaymentMandate): string[] {
   const out: string[] = [];
   if (open.payee && !merchantMatches(open.payee, closed.payee)) out.push(`Pre-set payee mismatch: expected ${open.payee.name}, got ${closed.payee?.name}`);
   if (open.payment_amount && (open.payment_amount.amount !== closed.payment_amount?.amount || open.payment_amount.currency !== closed.payment_amount?.currency)) out.push("Pre-set amount mismatch");
-  if (open.payment_instrument && open.payment_instrument.id !== closed.payment_instrument?.id) out.push("Pre-set payment_instrument mismatch");
+  // The whole instrument must be the same, as in the reference SDK (id, type and description). The id alone would let a debit card stand in for the credit card named.
+  if (open.payment_instrument) {
+    const o = open.payment_instrument as unknown as Record<string, unknown>;
+    const c = (closed.payment_instrument ?? {}) as unknown as Record<string, unknown>;
+    if (["id", "type", "description"].some((k) => (o[k] ?? null) !== (c[k] ?? null))) out.push("Pre-set payment_instrument mismatch");
+  }
   if (open.execution_date !== undefined && open.execution_date !== closed.execution_date) out.push(`Pre-set execution_date mismatch: expected ${open.execution_date}, got ${closed.execution_date}`);
   return out;
 }
@@ -124,7 +138,7 @@ function evaluateOne(c: Ap2Constraint, closed: Ap2ClosedPaymentMandate, ctx: Ap2
       if (amount.currency !== b.currency) return [`Budget currency mismatch: expected ${b.currency}, got ${amount.currency}`];
       if (ctx.totalAmountMinor === undefined) return ["Missing mandate context required to evaluate budget"];
       // The budget is written in whole currency units, the amounts in minor units, as in the reference SDK.
-      const limit = Math.trunc(b.max * 100);
+      const limit = budgetLimitMinor(b.max);
       const total = ctx.totalAmountMinor + amount.amount;
       return total > limit ? [`Cumulative spend ${total} exceeds budget limit ${limit} (past spend: ${ctx.totalAmountMinor})`] : [];
     }

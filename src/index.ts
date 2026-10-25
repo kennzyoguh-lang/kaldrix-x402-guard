@@ -5,6 +5,7 @@ export type { AssetRule, Decision, EvmAuthorization, PaymentPayload, PaymentRequ
 export {
   checkAp2PaymentConstraints,
   ap2ToPolicy,
+  budgetLimitMinor,
   merchantMatches,
   type Ap2Amount,
   type Ap2ClosedPaymentMandate,
